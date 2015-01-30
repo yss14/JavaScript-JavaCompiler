@@ -156,24 +156,9 @@ public class JavaScriptPPCompiler {
 	public static void main(String[] args) throws MissingDepedencyException {
 
 		try {
-			/*
-			 * CompiledFile f = compileFile("test/ClassA.jpp",
-			 * "/Users/yss/Desktop/ClassA.js"); f =
-			 * compileFile("test/ClassB.jpp", "/Users/yss/Desktop/ClassB.js");
-			 */
-
-			// CompiledFile f = compileFile("test/Combined.jpp",
-			// "/Users/yss/Desktop/Combined.js");
-
 			ArrayList<String> files = new ArrayList<String>();
-
-			files.add("test/ClassA.jpp");
-			files.add("test/ClassB.jpp");
-
-			CompiledFile f = compileFiles(files,
-					"/Users/yss/Desktop/Combined.js");
-
-			// System.out.println(f.getCompiledCode());
+			
+			CompiledFile f = compileFiles(files, "");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
