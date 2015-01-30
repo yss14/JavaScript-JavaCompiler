@@ -1,0 +1,11 @@
+class Foo {
+    protected var findMe = 100;
+}
+class Bar extends Foo {
+
+    public function Constructor() {
+        findMe = 5;
+    }
+}
+
+new Bar();

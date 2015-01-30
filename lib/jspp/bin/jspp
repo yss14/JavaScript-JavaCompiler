@@ -1,0 +1,387 @@
+#!/usr/bin/env node
+
+var	fs		= require('fs'),
+	paramon		= require('paramon'),
+	jspp		= require('javascript-plusplus'),
+	Compiler	= global.compiler;
+
+//Generate AST
+function jsparse () {
+	return jspp.narcissus.jsparse.apply(jspp.narcissus, arguments);
+}
+
+//CLI colors
+var format = {
+	BOLD     : '\u001b[0;1m',
+	GREEN    : '\u001b[0;32m',
+	RED      : '\u001b[0;31m',
+	YELLOW   : '\u001b[0;33m',
+	REDBG    : '\u001b[0;41m',
+	YELLOWBG : '\u001b[0;43m',
+	RESET    : '\u001b[0m'
+};
+
+//Process arguments
+var args = paramon.readFormat(process.argv, {
+	name:	"js++",
+	usage:	"js++ file(s) [options]",
+	params:	[
+		{
+			name:		'check',
+			args:		['--check', '-c'],
+			desc:		'Verifies the compiled code to ensure it\'s valid JavaScript.',
+			maxParams:	0
+		},
+		{
+			name:		'scope',
+			args:		['--scope', '-s'],
+			desc:		'Creates a scope to prevent compiled code from polluting global namespace.',
+			maxParams:	0
+		},
+		{
+			name:		'debug',
+			args:		['--debug', '-d'],
+			desc:		'Compile in debug mode.',
+			maxParams:	0
+		},
+		{
+			name:		'warnings',
+			args:		['--warn', '-w'],
+			desc:		'Display compiler warnings.',
+			maxParams:	0
+		},
+		{
+			name:		'pretty',
+			args:		['--pretty', '-p'],
+			desc:		'Pretty print compiled code.',
+			maxParams:	0
+		},
+		{
+			name:		'visualize',
+			args:		['--visualize', '-v'],
+			desc:		'Visualize errors and warnings.',
+			maxParams:	0
+		},
+		{
+			name:		'encoding',
+			args:		['--encoding', '-e'],
+			desc:		'The encoding to use for reading the files.',
+			maxParams:	1,
+			minParams:	1
+		},
+		{
+			name:		'output',
+			args:		['--output', '-o'],
+			desc:		'The output target. Default=-',
+			maxParams:	1,
+			minParams:	1
+		}
+	]
+});
+var inputFiles = args['$!stray'];
+
+//Debugging
+args.debug || process.on('uncaughtException', function (e) {
+	console.log('[' + format.RED + 'ERROR' + format.RESET + '] ' + (e.message || ""));
+
+	process.exit(1);
+});
+
+//If no input files, start the REPL
+if (!inputFiles.length) {
+	require("../src/repl")(jspp);
+}
+
+/* Heavy async soup */
+
+function Dummy(){}
+Dummy.prototype.toString = function () {
+	return this.r;
+};
+Dummy.prototype.r = '';
+
+var asReady = 0;
+
+function ready () {
+	if (++asReady !== files.length) return;
+
+	/* All files ready, let's get going */
+
+	var code = files.join('\n;'),
+		t = Date.now();
+		filename = args.output || '-',
+		parseError = false,
+		compiler;
+
+	//Wrap the compilation code in a try/catch so we can manually output
+	//compile errors and catch parse-time errors
+	try {
+		compiler = new Compiler(jsparse(code), {
+			debug:		args.debug,
+			nowrap:		args.scope,
+			warnings:	args.warnings
+		});
+
+		compiler.preprocess();
+
+		var output = compiler.compile();
+
+		//Print warnings
+		var i = 0,
+			len = compiler.warnings.length,
+			error,
+			warning;
+		for (; i < len; i++) {
+			warning = compiler.warnings[i];
+
+			visualize(
+				format.BOLD + warning.type.name + format.RESET + ": " +
+					(warning.toString() || ""),
+
+				"[  WARN  ]  ",
+				code,
+				warning.line - 1,
+				warning.chara.start,
+				warning.chara.end,
+				format.YELLOW,
+				format.YELLOWBG
+			);
+		}
+
+		//Print errors
+		i = 0;
+		len = compiler.errors.length;
+		for (; i < len; i++) {
+			error = compiler.errors[i];
+
+			visualize(
+				format.BOLD + error.type.name + format.RESET + ": " +
+					(error.message || ""),
+
+				"[  ERROR  ] ",
+				code,
+				error.line - 1,
+				error.chara.start,
+				error.chara.end,
+				format.RED,
+				format.REDBG
+			);
+		}
+
+		var finalStatus = "";
+
+		//Compiled with errors - output status
+		if (compiler.errors && compiler.errors.length) {
+			finalStatus = '[  ' + format.RED + 'FATAL' + format.RESET + '  ] ';
+			finalStatus += format.BOLD + filename.replace(/\/\//, "/") + format.RESET;
+			finalStatus += ': Compiled in ' + (Date.now() - t) + 'ms with ';
+
+			//If --warn enabled, output warnings
+			if (args.warnings) {
+				finalStatus += compiler.warnings.length + ' warnings and ';
+			}
+
+			//If we've got errors, output errors
+			if (compiler.errors) {
+				finalStatus += compiler.errors.length.toString() || "0";
+			}
+			else {
+				finalStatus += "0";
+			}
+			finalStatus += " errors."
+
+			console.log(finalStatus);
+		}
+
+		//Compiled OK! Output status
+		else {
+			var formattedFilename = format.BOLD +
+									filename.replace(/\/\//, "/") +
+									format.RESET;
+
+			finalStatus = '[   ' + format.GREEN + 'OK' + format.RESET + '   ]  ';
+			finalStatus += formattedFilename;
+			finalStatus += ': Compiled in ' + (Date.now() - t) + 'ms';
+
+			//If --warn enabled, output warnings
+			if (args.warnings) {
+				finalStatus += ' with ' + compiler.warnings.length + ' warnings';
+				finalStatus += ' and 0 errors';
+			}
+
+			console.log(finalStatus);
+
+			//Verify the compiled code for valid JS?
+			if (args.check) {
+				if (verify(output)) {
+					console.log(
+						'[   ' + format.GREEN + 'OK' + format.RESET + '   ]  ' +
+						formattedFilename + ": " +
+						'Verification of compiled code complete.'
+					);
+				}
+				else {
+					console.log(
+						"[" + format.RED + "  FATAL  " + format.RESET + "] " +
+						formattedFilename + ": " +
+						"Verification of compiled code failed."
+					);
+				}
+			}
+		}
+	}
+	//Catch parse errors and manually output, highlight, etc.
+	catch(e){
+		//Get error line number
+		var lineno = /lineno:\s*(\d+)/i.exec(e.message);
+		if (lineno && lineno.length == 2) {
+			lineno = (+lineno[1] - 1) || -1;
+		}
+		else {
+			lineno = -1;
+		}
+
+		//Format the error message
+		e.message = e.message.replace(/\s*filename:\s*,?/i, "");
+		e.message = e.message.replace(/\s*lineno:\s*\d*\s*,?/i, "");
+		e.message = e.message.replace(/\s*,*\s*$/, "");
+
+		visualize(
+			format.BOLD + inputFiles + format.RESET + ": ParseError: " +
+				(e.message || ""),
+
+			"[  ERROR  ] ",
+			code,
+			lineno,
+			e.cursor,
+			e.cursor + 1,
+			format.RED,
+			format.REDBG
+		);
+
+		parseError = true;
+	}
+
+	//If everything compiled successfully, write to output
+	if (output != null && !parseError) {
+		if (filename === '-') {
+			console.log(output);
+		} else {
+			fs.writeFileSync(
+				filename,
+				args.pretty ? jspp.js_beautify(output) : output,
+				args.encoding || 'UTF-8'
+			);
+		}
+	}
+	//Otherwise, notify of parse errors
+	else {
+		console.log(
+			"[" + format.RED + "  FATAL  " + format.RESET +
+			"] Compilation failed with a syntax error at parse time."
+		);
+	}
+}
+
+//Validate the compiled code to test for valid JavaScript
+function verify(code){
+	var validatedCode;
+
+	try{
+		validatedCode = Function(code);
+	}
+	finally{
+		return !!validatedCode;
+	}
+}
+
+//Visualize errors and warnings
+function visualize(message, errorType, code, lineno, errorStart, errorEnd, fgColor, bgColor) {
+	//Highlight the specific error character
+	var errorCode = code,
+		errorCodeBegin = errorCode.slice(0, errorStart),
+		errorCodeHighlight = errorCode.slice(errorStart, errorEnd),
+		errorCodeEnd   = errorCode.slice(errorEnd, errorCode.length),
+		indent = Array(errorType.length + 1).join(" ");
+
+	errorCode = errorCodeBegin;
+	//If the error character(s) are whitespace, we need to highlight it using
+	//background rather than foreground color
+	if (/^\s+$/.test(errorCodeHighlight)) {
+		errorCode += bgColor + errorCodeHighlight + format.RESET;
+	}
+	//Otherwise, color just the foreground
+	else {
+		errorCode += fgColor + errorCodeHighlight + format.RESET;
+	}
+	errorCode += errorCodeEnd;
+
+	errorCode = errorCode.split(/[\r\n]/gm);
+
+	//Get error character relative to error line
+	var errorLineChar = Math.max(
+		errorStart - errorCode.slice(0, lineno).join("\n").length,
+		-1
+	);
+
+	//Format error code
+	errorCode = errorCode.map(function(lineCode, index) {
+		var lineIndent = indent;
+
+		//Highlight the indent for error lines
+		if (index == lineno) {
+			lineIndent = bgColor + indent + format.RESET;
+		}
+
+		return lineIndent + (index + 1) + ". " + lineCode;
+	});
+
+	//Get only the nearest lines for an error rather than outputting entire
+	//source code
+	var beginLine = Math.max(0, lineno - 5),
+		endLine = Math.min(lineno + 5, errorCode.length);
+	errorCode = errorCode.slice(beginLine, endLine);
+
+	//Display the error message
+	console.log(
+		errorType.replace(/\[([^\]]+)]/, function(s, errorTypeExtracted) {
+			return "[" + fgColor + errorTypeExtracted + format.RESET + "]";
+		}) +
+		(message || "") + ", " +
+		format.BOLD + "line " + format.RESET + (lineno + 1) +
+		format.BOLD + " char " + format.RESET + errorLineChar
+	);
+
+	//Print out visualization of error
+	if (args.visualize) {
+		console.log(
+			"\n" +
+			indent + format.BOLD + "Filename" + format.RESET + ": " + inputFiles
+		);
+		console.log(
+			indent + format.BOLD + "Source Code" + format.RESET + ": \n"
+		);
+
+		console.log(errorCode.join("\n").replace(/\t/gm, "    "));
+	}
+}
+
+//Concatenate files
+var files = inputFiles.map(function(f){
+	var r = new Dummy;
+	if (f === '-') {
+		process.stdin.resume();
+		process.stdin.on('data', function (data) {
+			r.r += String(data);
+		});
+		process.stdin.on('end', ready);
+	} else {
+		fs.readFile(f, args.encoding || 'UTF-8', function(e, data) {
+			if (e) throw "Reading file '" + f + "' failed.";
+
+			r.r = String(data);
+			ready();
+		});
+	}
+	return r;
+});
