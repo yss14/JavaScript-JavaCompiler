@@ -1,0 +1,15 @@
+class A{
+	protected var a;
+	
+	public function Constructor(){
+		this.a = 5;
+	}
+}
+
+class B extends A{
+	public function Constructor(){
+		console.log(this.a + 5);
+	}
+}
+
+new B();

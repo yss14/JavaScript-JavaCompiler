@@ -1,0 +1,7 @@
+class A{
+	protected var a;
+	
+	public function Constructor(){
+		this.a = 5;
+	}
+}

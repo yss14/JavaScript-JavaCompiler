@@ -1,0 +1,7 @@
+class B extends A{
+	public function Constructor(){
+		console.log(this.a + 5);
+	}
+}
+
+new B();
